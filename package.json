@@ -1,0 +1,11 @@
+{
+  "name": "onepage",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "一页 · 记账 / 任务 / 专注 的本地优先 PWA",
+  "scripts": {
+    "test": "node --test tests/",
+    "serve": "python -m http.server 8080"
+  }
+}

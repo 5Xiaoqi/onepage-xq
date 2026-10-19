@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=2" />
+  <title>一页 · 记账 任务 专注</title>
+  <meta name="description" content="截图记账、一句话拆任务、番茄专注。数据只存在你自己的手机上。" />
+  <meta name="theme-color" content="#F4F1EA" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0D0F0E" media="(prefers-color-scheme: dark)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="一页" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+  <link rel="icon" type="image/png" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./assets/app.css" />
+</head>
+<body>
+  <div class="app" id="app">
+    <main class="view" id="view" aria-live="polite"></main>
+    <nav class="tabbar" id="tabbar"></nav>
+  </div>
+
+  <div id="sheet-root"></div>
+  <div id="toast-root" class="toast-root" role="status" aria-live="polite"></div>
+  <div id="boot-errors" hidden></div>
+
+  <noscript>
+    <div class="noscript">一页需要开启 JavaScript 才能使用。</div>
+  </noscript>
+
+  <script>
+    window.addEventListener('error', function (e) {
+      var box = document.getElementById('boot-errors');
+      if (!box) return;
+      box.hidden = false;
+      box.textContent += '[error] ' + (e.message || '') + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0) + '\n';
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var box = document.getElementById('boot-errors');
+      if (!box) return;
+      box.hidden = false;
+      box.textContent += '[reject] ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason) + '\n';
+    });
+  </script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
