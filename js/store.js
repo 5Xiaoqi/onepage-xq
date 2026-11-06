@@ -26,6 +26,7 @@ function emptyData() {
     tx: [],
     tasks: [],
     sessions: [],
+    reviews: [],
     settings: { ...DEFAULT_SETTINGS },
     meta: { updatedAt: null, demo: false },
   };
@@ -47,6 +48,7 @@ export const db = {
         tx: Array.isArray(parsed.tx) ? parsed.tx : [],
         tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+        reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
         meta: { ...emptyData().meta, ...(parsed.meta || {}) },
       };
       return this.data;
@@ -88,6 +90,7 @@ export const db = {
       tx: payload.tx,
       tasks: payload.tasks,
       sessions: Array.isArray(payload.sessions) ? payload.sessions : [],
+      reviews: Array.isArray(payload.reviews) ? payload.reviews : [],
     };
     this.save();
   },
@@ -221,6 +224,23 @@ export const db = {
     }
     this.save();
     return s;
+  },
+
+  /* ---------- 复盘 ---------- */
+
+  addReview(record) {
+    const list = this.data.reviews || (this.data.reviews = []);
+    const item = {
+      id: uid('review'),
+      createdAt: new Date().toISOString(),
+      ...record,
+    };
+    const i = list.findIndex((r) => r.weekKey === item.weekKey);
+    if (i >= 0) list[i] = { ...list[i], ...item };
+    else list.unshift(item);
+    this.data.reviews = list.slice(0, 24);
+    this.save();
+    return item;
   },
 
   /* ---------- 设置 ---------- */
@@ -405,6 +425,7 @@ export function backupPayload() {
     tx: db.data.tx,
     tasks: db.data.tasks,
     sessions: db.data.sessions,
+    reviews: db.data.reviews || [],
   };
 }
 
@@ -439,6 +460,13 @@ export function seedDemo(now = new Date()) {
   const mk = (partial) => db.addTx({ source: 'demo', ...partial });
 
   mk({ amountCents: 3200, merchant: '星巴克', category: 'food', account: '微信', occurredAt: at(0, 9, 12) });
+  mk({ amountCents: 1200, merchant: '便利蜂', category: 'daily', account: '微信', occurredAt: at(0, 8, 0) });
+  mk({ amountCents: 1200, merchant: '便利蜂', category: 'daily', account: '微信', occurredAt: at(0, 8, 10) });
+  mk({ amountCents: 1200, merchant: '便利蜂', category: 'daily', account: '微信', occurredAt: at(0, 8, 20) });
+  mk({ amountCents: 1800, merchant: '瑞幸咖啡', category: 'food', account: '微信', occurredAt: at(0, 9, 5) });
+  mk({ amountCents: 1500, merchant: '网易云音乐', category: 'fun', account: '支付宝', occurredAt: at(14, 8, 0) });
+  mk({ amountCents: 1500, merchant: '网易云音乐', category: 'fun', account: '支付宝', occurredAt: at(44, 8, 0) });
+  mk({ amountCents: 1500, merchant: '网易云音乐', category: 'fun', account: '支付宝', occurredAt: at(75, 8, 0) });
   mk({ amountCents: 12860, merchant: '盒马鲜生', category: 'daily', account: '支付宝', occurredAt: at(1, 18, 40) });
   mk({ amountCents: 2450, merchant: '滴滴出行', category: 'transport', account: '微信', occurredAt: at(1, 8, 22) });
   mk({ amountCents: 26800, merchant: '海底捞', category: 'food', account: '支付宝', occurredAt: at(2, 19, 35) });

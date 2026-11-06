@@ -123,3 +123,18 @@ test('习惯：下次发生时间跳过今天已过时段', () => {
   const next = nextOccurrence({ type: 'weekly', weekdays: [1], time: '09:00' }, NOW);
   assert.equal(dayKey(next), '2026-10-26');
 });
+
+test('复盘记录：同一周覆盖，备份能带上', () => {
+  db.reset();
+  db.addReview({ weekKey: '2026-10-19', answers: { q3: '外卖每周 3 次' }, picked: ['tx1'] });
+  db.addReview({ weekKey: '2026-10-19', answers: { q3: '外卖每周 2 次' }, picked: [] });
+  assert.equal(db.data.reviews.length, 1);
+  assert.equal(db.data.reviews[0].answers.q3, '外卖每周 2 次');
+
+  const payload = JSON.parse(JSON.stringify(backupPayload()));
+  assert.equal(payload.reviews.length, 1);
+  db.reset();
+  assert.equal(db.data.reviews.length, 0);
+  db.replaceAll(payload);
+  assert.equal(db.data.reviews.length, 1);
+});

@@ -7,7 +7,8 @@
 ## 功能
 
 - **记账**：粘贴微信/支付宝/订单/银行短信文字，自动识别金额、商户、分类、账户、时间；也可选图 OCR 或手动。带月度预算、分类统计、重复检测、CSV 导出。
-- **任务**：自然语言识别时间与任务样式（截止 / 习惯 / 项目 / 等待 / 约会 / 琐事），自动拆步骤；习惯打卡与连续天数；等待任务跟进记录；一键导出到 iPhone 日历。
+- **5 分钟复盘**：本周 vs 上周、小额高频、疑似订阅、重复付款/超预算异常，三问存档，下月对照。
+- **任务**：自然语言识别时间与任务样式（截止 / 习惯 / 项目 / 等待 / 约会 / 琐事），自动拆步骤；**批量粘贴**整周计划；卡片上给**时段建议**（不覆盖你设的时间）；习惯打卡与连续天数；等待任务跟进记录；一键导出到 iPhone 日历。
 - **专注**：番茄钟、时间戳计时（切后台不跑偏）、白噪音、屏幕常亮、专注统计。
 
 ## 快速开始
@@ -31,7 +32,9 @@
 
 ```bash
 node tests/core.test.mjs     # 记账/任务解析 24 项
-node tests/store.test.mjs    # 数据层 6 项
+node tests/store.test.mjs    # 数据层 7 项
+node tests/review.test.mjs   # 复盘引擎 4 项
+node tests/slot.test.mjs     # 时段建议 13 项
 node tests/ui-smoke.mjs      # 四个页面渲染 + 日历导出
 node scripts/check-imports.mjs
 node scripts/check-ui.mjs
@@ -49,7 +52,7 @@ node scripts/check-ui.mjs
 ```
 index.html  manifest.webmanifest  sw.js
 assets/app.css
-js/  (app, store, money-parser, task-parser, view-*, ocr, ics, ui, util)
+js/  (app, store, money-parser, task-parser, review, view-*, ocr, ics, ui, util)
 icons/
 tests/  scripts/
 使用说明.md  本地预览.bat

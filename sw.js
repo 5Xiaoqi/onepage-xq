@@ -2,7 +2,7 @@
  * 目的：离线打开、启动更快。所有数据在 localStorage / IndexedDB，不经过网络。
  */
 
-const VERSION = 'onepage-v1.0.0';
+const VERSION = 'onepage-v1.2.1';
 const SHELL = [
   './index.html',
   './manifest.webmanifest',
@@ -15,8 +15,10 @@ const SHELL = [
   './js/task-parser.js',
   './js/ocr.js',
   './js/ics.js',
+  './js/review.js',
   './js/view-ledger.js',
   './js/view-tasks.js',
+  './js/slot.js',
   './js/view-focus.js',
   './js/view-me.js',
   './icons/icon-180.png',

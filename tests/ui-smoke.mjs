@@ -89,9 +89,11 @@ globalThis.URL.revokeObjectURL = () => {};
 
 const { db, seedDemo } = await import('../js/store.js');
 const { renderLedger } = await import('../js/view-ledger.js');
-const { renderTasks } = await import('../js/view-tasks.js');
+const { renderTasks, taskIdentity, cleanBatchLine } = await import('../js/view-tasks.js');
 const { renderFocus } = await import('../js/view-focus.js');
-const { renderMe } = await import('../js/view-me.js');
+const { renderMe, reviewSheetHTML } = await import('../js/view-me.js');
+const { buildReview } = await import('../js/review.js');
+const { parseTask } = await import('../js/task-parser.js');
 const { buildICS } = await import('../js/ics.js');
 
 db.load();
@@ -153,10 +155,20 @@ assert.match(html, /3,?482|3,?000/);
 html = render('tasks-demo', renderTasks);
 assert.match(html, /季度报告/);
 assert.match(html, /连续|习惯/);
+assert.match(html, /slot-hint/);
 html = render('focus-demo', renderFocus);
 assert.match(html, /今日分钟/);
 html = render('me-demo', renderMe);
 assert.match(html, /钱花在哪|节奏/);
+assert.match(html, /本周复盘/);
+
+// 复盘弹层 HTML 的标签闭合
+const review = buildReview(db.data.tx, db.data.settings, new Date(2026, 9, 19, 10, 0));
+const sheetHtml = reviewSheetHTML(review, null, '10/19–10/25');
+assert.ok(sheetHtml.length > 400);
+assert.ok(!sheetHtml.includes('undefined'));
+assert.ok(!sheetHtml.includes('NaN'));
+checkTags(sheetHtml, 'review-sheet');
 
 // 日历导出
 const t = db.data.tasks.find((x) => x.style === 'project');
@@ -167,5 +179,14 @@ assert.match(ics, /BEGIN:VEVENT/);
 assert.match(ics, /TRIGGER:-PT15M/);
 assert.match(ics, /END:VCALENDAR/);
 assert.ok(ics.includes('SUMMARY:' + t.title));
+
+// 批量粘贴：去列表符号 + 同名不同周期不去重
+assert.equal(cleanBatchLine('1. 背单词'), '背单词');
+assert.equal(cleanBatchLine('- [ ] 做数学'), '做数学');
+assert.equal(cleanBatchLine('1.5小时跑步'), '1.5小时跑步');
+const monday = parseTask('每周一跑步');
+const wednesday = parseTask('每周三跑步');
+assert.notEqual(taskIdentity(monday), taskIdentity(wednesday));
+assert.equal(taskIdentity(monday), taskIdentity(parseTask('每周一跑步')));
 
 console.log('UI smoke ok: 4 views render with empty + demo data, ICS builds');

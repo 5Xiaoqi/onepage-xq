@@ -34,6 +34,7 @@ import {
 import { bus, openSheet, closeSheet, toast, confirmDialog, emptyState, haptic } from './ui.js';
 import { exportTasksToCalendar } from './ics.js';
 import { setFocusTask } from './view-focus.js';
+import { slotHint } from './slot.js';
 
 let showAllDone = false;
 
@@ -68,7 +69,9 @@ export function renderTasks(root) {
         <input data-quick placeholder="明天下午3点前把报告初稿写完" enterkeyhint="done" />
         <button class="capture-btn" data-quick-go>${icon('sparkles', 13)} 识别</button>
       </div>
-      <p class="capture-hint">自动识别截止 / 习惯 / 项目 / 等待 / 约会，并拆成小步骤</p>
+      <p class="capture-hint">自动识别截止 / 习惯 / 项目 / 等待 / 约会，并拆成小步骤
+        <button class="ghost-link" data-batch-open style="margin-left:6px">批量粘贴</button>
+      </p>
       <div class="chips" style="margin:2px 0 2px">
         ${EXAMPLES.map((e) => `<button class="chip" data-example="${escapeHtml(e)}" style="font-size:11px;padding:5px 10px">${escapeHtml(e)}</button>`).join('')}
       </div>
@@ -128,6 +131,7 @@ export function renderTasks(root) {
     })
   );
   root.querySelectorAll('[data-new]').forEach((b) => b.addEventListener('click', () => openTaskComposer('')));
+  root.querySelector('[data-batch-open]')?.addEventListener('click', () => openBatchPaste());
   root.querySelector('[data-focus-input]')?.addEventListener('click', () => input.focus());
   root.querySelector('[data-toggle-done]')?.addEventListener('click', () => {
     showAllDone = !showAllDone;
@@ -191,6 +195,7 @@ function taskCard(task, now) {
   const prog = taskProgress(task);
   const due = task.dueAt ? new Date(task.dueAt) : null;
   const overdue = due && due < now && !isDone && !isHabit;
+  const hint = isDone ? null : slotHint(task, now);
 
   let meta = '';
   if (isHabit) {
@@ -231,6 +236,7 @@ function taskCard(task, now) {
       <div class="task-meta">${meta}</div>
       ${prog ? `<div class="progress"><i style="width:${prog.pct}%"></i></div>` : ''}
       ${dots}
+      ${hint ? `<div class="slot-hint"><span>⏰ ${escapeHtml(hint.slot)}</span><i>${escapeHtml(hint.why)}</i></div>` : ''}
     </div>
     <button class="task-more" tabindex="-1" aria-hidden="true">${icon('chevron', 15)}</button>
   </article>`;
@@ -587,6 +593,7 @@ function attachTaskEditor(sheet, { draft, isNew, task = null, parsed = null }) {
       rec = {
         type,
         time,
+        timeInferred: false,
         weekdays: [...sheet.querySelectorAll('[data-weekday].active')].map((b) => +b.dataset.weekday),
         day: Math.max(1, Math.min(31, +sheet.querySelector('[data-rec-day]').value || 1)),
       };
@@ -668,5 +675,100 @@ function attachTaskEditor(sheet, { draft, isNew, task = null, parsed = null }) {
     closeSheet();
     toast('已删除');
     bus.refresh();
+  });
+}
+
+/* ---------------- 批量粘贴 ---------------- */
+
+/** 批量去重用的身份：同名但周期/日期不同，算两件事 */
+export function taskIdentity(t) {
+  const rec = t.recurrence && t.recurrence.type
+    ? [t.recurrence.type, (t.recurrence.weekdays || []).join(','), t.recurrence.day || '', t.recurrence.time || ''].join(':')
+    : '';
+  const due = rec ? '' : t.dueAt ? dayKey(t.dueAt) : '';
+  return `${String(t.title || '').trim()}|${t.style || 'normal'}|${rec}|${due}`;
+}
+
+/** 去掉列表符号、编号、Markdown 复选框 */
+export function cleanBatchLine(line) {
+  return String(line || '')
+    .replace(/^\s*(?:[-*•·]\s*)?(?:\[[ xX]\]\s*)?(?:\d{1,2}[.、)）](?!\d)\s*)?/, '')
+    .trim();
+}
+
+/** 一行一件事，逐行解析后一起建任务；同一件事自动跳过，避免重复粘贴建两遍 */
+export function openBatchPaste() {
+  openSheet({
+    title: '批量粘贴',
+    subtitle: '一行一件事，粘完一起加上',
+    body: `
+      <div class="field">
+        <label class="field-label">每行一条 <span style="font-weight:500">可直接粘下周计划</span></label>
+        <textarea class="input" data-batch rows="9" style="height:auto;min-height:170px;padding:12px;line-height:1.6"
+          placeholder="每天早上6点40背单词&#10;每周一三五晚上7点半做数学&#10;每周二四晚上7点半做电路&#10;周五前交齐结项材料"></textarea>
+      </div>
+      <p class="capture-hint" data-batch-count>还没有内容</p>
+      <p class="capture-hint">重复的会跳过（同名 + 同时间/周期）；列表符号和 1. 2. 编号会自动去掉。</p>
+    `,
+    foot: `<button class="btn" data-batch-save>全部加上</button>`,
+    onMount(sheet) {
+      const ta = sheet.querySelector('[data-batch]');
+      const count = sheet.querySelector('[data-batch-count]');
+      const lines = () =>
+        String(ta.value || '')
+          .split('\n')
+          .map(cleanBatchLine)
+          .filter(Boolean);
+
+      const refreshCount = () => {
+        const n = lines().length;
+        count.textContent = n ? `${n} 条，保存时重复的跳过` : '还没有内容';
+      };
+      ta.addEventListener('input', refreshCount);
+
+      sheet.querySelector('[data-batch-save]').addEventListener('click', () => {
+        const arr = lines();
+        if (!arr.length) {
+          toast('先粘几行进来');
+          return;
+        }
+        const existing = new Set(db.data.tasks.map(taskIdentity));
+        let added = 0;
+        let skipped = 0;
+        let bad = 0;
+
+        arr.forEach((line) => {
+          let parsed = null;
+          try {
+            parsed = parseTask(line);
+          } catch {
+            parsed = null;
+          }
+          const title = String(parsed && parsed.title ? parsed.title : '').trim();
+          if (!title) {
+            bad += 1;
+            return;
+          }
+          const key = taskIdentity(parsed);
+          if (existing.has(key)) {
+            skipped += 1;
+            return;
+          }
+          try {
+            db.addTask({ ...parsed, habit: { log: {} } });
+            existing.add(key);
+            added += 1;
+          } catch {
+            bad += 1;
+          }
+        });
+
+        haptic(10);
+        closeSheet();
+        bus.refresh();
+        const tail = [skipped ? `跳过重复 ${skipped} 条` : '', bad ? `${bad} 条没听懂` : ''].filter(Boolean).join('，');
+        toast(`加上 ${added} 条${tail ? `，${tail}` : ''}`);
+      });
+    },
   });
 }

@@ -488,10 +488,12 @@ export function parseTask(input, now = new Date()) {
   }
 
   if (recInfo?.rec) {
+    const explicitTime = !!(timeInfo || dateInfo?.morning || dateInfo?.evening);
     if (timeInfo) recInfo.rec.time = `${pad2(timeInfo.hour)}:${pad2(timeInfo.minute)}`;
     else if (dateInfo?.morning) recInfo.rec.time = '08:00';
     else if (dateInfo?.evening) recInfo.rec.time = '20:00';
     else recInfo.rec.time = recInfo.rec.time || '09:00';
+    recInfo.rec.timeInferred = !explicitTime;
     due = nextOccurrence(recInfo.rec, now);
   }
 

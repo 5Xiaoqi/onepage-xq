@@ -7,6 +7,8 @@ import {
   download,
   isStandalone,
   dayKey,
+  addDays,
+  startOfWeek,
 } from './util.js';
 import {
   db,
@@ -24,6 +26,7 @@ import {
 } from './store.js';
 import { categoryById } from './money-parser.js';
 import { habitStreak } from './task-parser.js';
+import { buildReview } from './review.js';
 import { bus, openSheet, closeSheet, toast, confirmDialog, haptic } from './ui.js';
 
 export function renderMe(root) {
@@ -42,6 +45,22 @@ export function renderMe(root) {
   const pct = budget ? Math.min(100, Math.round((s.expense / budget) * 100)) : 0;
   const backupDays = lastBackupDays(now);
   const install = isStandalone();
+
+  const review = buildReview(db.data.tx, db.data.settings, now);
+  const reviews = db.data.reviews || [];
+  const weekReview = reviews.find((r) => r.weekKey === review.weekKey) || null;
+  const lastReview = reviews[0] || null;
+  const weekStart = startOfWeek(now);
+  const weekEnd = addDays(weekStart, 6);
+  const weekRange = `${weekStart.getMonth() + 1}/${weekStart.getDate()}–${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
+  const deltaText =
+    review.week.deltaPct === null
+      ? '上周无支出'
+      : review.week.deltaPct > 0
+        ? `比上周多 ${review.week.deltaPct}%`
+        : review.week.deltaPct < 0
+          ? `比上周少 ${Math.abs(review.week.deltaPct)}%`
+          : '和上周持平';
 
   root.innerHTML = `
     <header class="page-head">
@@ -73,6 +92,22 @@ export function renderMe(root) {
             </div>`
           : `<button class="ghost-link" data-edit-budget style="margin-top:12px">${icon('plus', 12)} 设一个月度预算</button>`
       }
+    </section>
+
+    <section class="card review-card">
+      <div class="card-head">
+        <span class="card-title">本周复盘<small>${weekRange}</small></span>
+        <span class="card-link" ${weekReview ? 'style="color:var(--jade)"' : ''}>${weekReview ? '已复盘' : '5 分钟'}</span>
+      </div>
+      <p class="review-headline">${escapeHtml(review.headline)}</p>
+      <div class="review-tags">
+        <span class="review-tag">${deltaText}</span>
+        <span class="review-tag">小额高频 ${money(review.small.cents, { decimals: 0 })}</span>
+        <span class="review-tag">订阅 ${review.subscriptions.length}</span>
+        <span class="review-tag">异常 ${review.anomalies.length}</span>
+      </div>
+      ${weekReview?.answers?.q3 ? `<p class="review-conclusion">这周答应自己：${escapeHtml(weekReview.answers.q3)}</p>` : lastReview?.answers?.q3 ? `<p class="review-conclusion">上次复盘：${escapeHtml(lastReview.answers.q3)}</p>` : ''}
+      <button class="btn small" data-review>${weekReview ? '查看 / 修改本周复盘' : '花 5 分钟复盘'}</button>
     </section>
 
     ${
@@ -197,7 +232,7 @@ export function renderMe(root) {
 
     <div class="about">
       <div class="brand-mark">页</div>
-      一页 1.0 · 本地优先<br />
+      一页 1.2 · 本地优先<br />
       没有账号、没有云端、没有广告<br />
       <span style="opacity:.7">数据在浏览器里，清理 Safari 数据会一起清掉，记得备份</span>
     </div>
@@ -240,11 +275,175 @@ export function renderMe(root) {
   });
 
   root.querySelectorAll('[data-edit-budget]').forEach((b) => b.addEventListener('click', openBudget));
+  root.querySelector('[data-review]').addEventListener('click', () => openReview(review, weekReview));
   root.querySelector('[data-theme]').addEventListener('click', openTheme);
   root.querySelector('[data-notify]').addEventListener('click', requestNotify);
   root.querySelector('[data-focus-setting]').addEventListener('click', openFocusSettings);
   root.querySelectorAll('[data-install-help]').forEach((b) => b.addEventListener('click', openInstallGuide));
   root.querySelector('[data-guide]').addEventListener('click', openRecognitionGuide);
+}
+
+/* ---------------- 复盘 ---------------- */
+
+function openReview(review, existing) {
+  const ws = new Date(review.weekStart);
+  const we = new Date(review.weekEnd);
+  const range = `${ws.getMonth() + 1}/${ws.getDate()}–${we.getMonth() + 1}/${we.getDate()}`;
+  openSheet({
+    title: '5 分钟复盘',
+    subtitle: `${range} · 先看数，再改一件事`,
+    body: reviewSheetHTML(review, existing, range),
+    foot: `<button class="btn" data-save-review>${existing ? '更新这次复盘' : '保存这次复盘'}</button>`,
+    onMount(sheet) {
+      bindReview(sheet, review, existing);
+    },
+  });
+}
+
+export function reviewSheetHTML(review, existing, range) {
+  const w = review.week;
+  const delta =
+    w.deltaPct === null
+      ? '上周没有支出'
+      : w.deltaPct > 0
+        ? `比上周多 ${w.deltaPct}%`
+        : w.deltaPct < 0
+          ? `比上周少 ${Math.abs(w.deltaPct)}%`
+          : '和上周持平';
+
+  const answers = existing?.answers || {};
+  const picked = new Set(existing?.picked || []);
+  const maxCat = Math.max(...review.categories.map((c) => Math.max(c.cents, c.prevCents)), 1);
+
+  return `
+    <div class="review-summary">
+      <div><span>本周支出</span><b>${money(w.expense)}</b><em>${delta}</em></div>
+      <div><span>上周支出</span><b>${money(w.prevExpense)}</b><em>${w.count} 笔 · ${range}</em></div>
+    </div>
+
+    <div class="review-tags" style="margin-top:0">
+      <span class="review-tag">小额高频 ${money(review.small.cents, { decimals: 0 })} / ${review.small.count} 笔</span>
+      <span class="review-tag">疑似订阅 ${review.subscriptions.length}</span>
+      <span class="review-tag">异常 ${review.anomalies.length}</span>
+    </div>
+
+    <section class="review-block">
+      <div class="review-q">
+        <span class="qnum">1</span>
+        <div><h3>哪笔没必要？</h3><p>${review.questions[0].hint}</p></div>
+      </div>
+      ${
+        review.candidates.length
+          ? `<div class="review-candidates">
+              ${review.candidates
+                .map(
+                  (c) => `<label class="review-candidate">
+                    <input type="checkbox" value="${c.id}" ${picked.has(c.id) ? 'checked' : ''} />
+                    <span class="rc-main"><b>${escapeHtml(c.title)}</b><em>${escapeHtml(c.reason)}</em></span>
+                    <span class="rc-amt">${money(c.amountCents)}</span>
+                  </label>`
+                )
+                .join('')}
+            </div>`
+          : `<p class="review-empty">这周没有明显的小额高频、深夜或重复支出，挺好。</p>`
+      }
+      <textarea class="textarea" data-q1 placeholder="也可以自己写一笔，比如：周三那杯奶茶其实不渴">${escapeHtml(answers.q1 || '')}</textarea>
+    </section>
+
+    <section class="review-block">
+      <div class="review-q">
+        <span class="qnum">2</span>
+        <div><h3>哪类超了？</h3><p>${review.questions[1].hint}</p></div>
+      </div>
+      ${
+        review.categories.length
+          ? `<div class="review-bars">
+              ${review.categories
+                .slice(0, 4)
+                .map((c) => {
+                  const pct = Math.max(3, Math.round((c.cents / maxCat) * 100));
+                  const d =
+                    c.deltaPct === null ? '上周 0' : c.deltaPct > 0 ? `+${c.deltaPct}%` : `${c.deltaPct}%`;
+                  return `<div class="review-bar">
+                    <span class="rb-name">${c.emoji} ${escapeHtml(c.name)}</span>
+                    <span class="rb-track"><i style="width:${pct}%;background:${c.color}"></i></span>
+                    <span class="rb-val">${money(c.cents, { decimals: 0 })}<em>${d}</em></span>
+                  </div>`;
+                })
+                .join('')}
+            </div>`
+          : `<p class="review-empty">本周还没有分类数据。</p>`
+      }
+      <textarea class="textarea" data-q2 placeholder="只抓一个，比如：餐饮比上周多了 200，主要是外卖">${escapeHtml(answers.q2 || '')}</textarea>
+    </section>
+
+    <section class="review-block">
+      <div class="review-q">
+        <span class="qnum">3</span>
+        <div><h3>下月改什么？</h3><p>${review.questions[2].hint}</p></div>
+      </div>
+      <textarea class="textarea" data-q3 placeholder="只写一条，能验收，比如：外卖每周最多 3 次" style="min-height:76px">${escapeHtml(answers.q3 || '')}</textarea>
+      <div class="tip-card">${icon('info', 14)}<span>保存后会存在本机，下个月再复盘时能看到这条承诺。</span></div>
+    </section>
+
+    ${
+      review.subscriptions.length || review.anomalies.length
+        ? `<section class="review-block">
+            <div class="review-q">
+              <span class="qnum">!</span>
+              <div><h3>顺手查到的</h3><p>不用全改，挑一个处理就行。</p></div>
+            </div>
+            <div class="review-findings">
+              ${review.subscriptions
+                .map(
+                  (s) => `<div class="finding">${icon('repeat', 13)}<span><b>${escapeHtml(s.merchant)}</b> 每月约 ${money(s.avgCents)}，已连续 ${s.months} 个月</span></div>`
+                )
+                .join('')}
+              ${review.anomalies
+                .map(
+                  (a) => `<div class="finding ${a.type === 'duplicate' ? 'warn' : ''}">${icon('alert', 13)}<span><b>${escapeHtml(a.title)}</b> ${escapeHtml(a.detail)}</span></div>`
+                )
+                .join('')}
+            </div>
+          </section>`
+        : ''
+    }
+  `;
+}
+
+function bindReview(sheet, review, existing) {
+  sheet.querySelector('[data-save-review]').addEventListener('click', () => {
+    const q1 = sheet.querySelector('[data-q1]').value.trim();
+    const q2 = sheet.querySelector('[data-q2]').value.trim();
+    const q3 = sheet.querySelector('[data-q3]').value.trim();
+    const picked = [...sheet.querySelectorAll('.review-candidate input:checked')].map((i) => i.value);
+
+    if (!q1 && !q2 && !q3 && !picked.length) {
+      toast('至少写一条，或者勾一笔，不然复盘没意义');
+      return;
+    }
+
+    db.addReview({
+      weekKey: review.weekKey,
+      headline: review.headline,
+      answers: { q1, q2, q3 },
+      picked,
+      snapshot: {
+        weekExpense: review.week.expense,
+        prevExpense: review.week.prevExpense,
+        smallCents: review.small.cents,
+        smallCount: review.small.count,
+        topCategory: review.topCategory?.name || '',
+        subscriptionCount: review.subscriptions.length,
+        anomalyCount: review.anomalies.length,
+      },
+    });
+
+    closeSheet();
+    toast('复盘已存档');
+    haptic(10);
+    bus.refresh();
+  });
 }
 
 /* ---------------- 设置弹层 ---------------- */
